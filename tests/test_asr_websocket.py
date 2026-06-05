@@ -102,6 +102,45 @@ def test_websocket_uses_corrected_text_before_translation(monkeypatch) -> None:
     assert captured_text == "I scream"
 
 
+def test_websocket_uses_ai_corrected_text_before_translation(monkeypatch) -> None:
+    captured_text = None
+
+    async def fake_ai_correct_text(text: str, previous_context=None) -> str:
+        assert text == "I scream"
+        return "I scream."
+
+    async def capture_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        nonlocal captured_text
+        captured_text = text
+        return f"中文: {text}"
+
+    monkeypatch.setattr("backend.main.ai_correct_text", fake_ai_correct_text)
+    monkeypatch.setattr("backend.main.translate_text", capture_text)
+
+    payload = {
+        "id": "asr_007",
+        "text": "ice cream",
+        "timestamp": 1710000000000,
+        "isFinal": True,
+    }
+
+    with client.websocket_connect("/ws/asr") as websocket:
+        websocket.send_json(payload)
+        response = websocket.receive_json()
+
+    assert response == {
+        "type": "asr_received",
+        "id": "asr_007",
+        "ok": True,
+        "normalizedText": "ice cream",
+        "translatedText": "中文: I scream.",
+    }
+    assert captured_text == "I scream."
+
+
 def test_websocket_returns_translation_failure(monkeypatch) -> None:
     async def raise_translation_error(
         text: str,

@@ -37,9 +37,9 @@ class XFYUNCredentials:
 
 
 def read_xfyun_credentials() -> XFYUNCredentials:
-    app_id = os.getenv("XFYUN_APP_ID")
-    api_key = os.getenv("XFYUN_API_KEY")
-    api_secret = os.getenv("XFYUN_API_SECRET")
+    app_id = os.getenv("XF_APPID") or os.getenv("XFYUN_APP_ID")
+    api_key = os.getenv("XF_APIKEY") or os.getenv("XFYUN_API_KEY")
+    api_secret = os.getenv("XF_SECRET") or os.getenv("XFYUN_API_SECRET")
 
     if not app_id or not api_key or not api_secret:
         raise TranslationConfigurationError("Missing XFYUN translation credentials")

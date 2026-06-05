@@ -51,6 +51,18 @@ class FakeAsyncClient:
         return self.response
 
 
+def clear_xfyun_env(monkeypatch) -> None:
+    for name in (
+        "XF_APPID",
+        "XF_APIKEY",
+        "XF_SECRET",
+        "XFYUN_APP_ID",
+        "XFYUN_API_KEY",
+        "XFYUN_API_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_encode_text_uses_utf8_base64() -> None:
     assert encode_text("Good morning.") == base64.b64encode(
         "Good morning.".encode("utf-8")
@@ -89,9 +101,7 @@ def test_parse_translation_response_rejects_error_code() -> None:
 
 @pytest.mark.anyio
 async def test_translate_text_rejects_missing_credentials(monkeypatch) -> None:
-    monkeypatch.delenv("XFYUN_APP_ID", raising=False)
-    monkeypatch.delenv("XFYUN_API_KEY", raising=False)
-    monkeypatch.delenv("XFYUN_API_SECRET", raising=False)
+    clear_xfyun_env(monkeypatch)
 
     with pytest.raises(TranslationConfigurationError):
         await translate_text("Good morning.", client=FakeAsyncClient(FakeResponse({})))
@@ -99,9 +109,10 @@ async def test_translate_text_rejects_missing_credentials(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_translate_text_posts_expected_payload(monkeypatch) -> None:
-    monkeypatch.setenv("XFYUN_APP_ID", "test_app_id")
-    monkeypatch.setenv("XFYUN_API_KEY", "test_api_key")
-    monkeypatch.setenv("XFYUN_API_SECRET", "test_api_secret")
+    clear_xfyun_env(monkeypatch)
+    monkeypatch.setenv("XF_APPID", "test_app_id")
+    monkeypatch.setenv("XF_APIKEY", "test_api_key")
+    monkeypatch.setenv("XF_SECRET", "test_api_secret")
 
     client = FakeAsyncClient(
         FakeResponse(
@@ -131,10 +142,39 @@ async def test_translate_text_posts_expected_payload(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
+async def test_translate_text_keeps_legacy_xfyun_env_fallback(monkeypatch) -> None:
+    clear_xfyun_env(monkeypatch)
+    monkeypatch.setenv("XFYUN_APP_ID", "legacy_app_id")
+    monkeypatch.setenv("XFYUN_API_KEY", "legacy_api_key")
+    monkeypatch.setenv("XFYUN_API_SECRET", "legacy_api_secret")
+
+    client = FakeAsyncClient(
+        FakeResponse(
+            {
+                "code": 0,
+                "message": "success",
+                "data": {
+                    "result": {
+                        "trans_result": {
+                            "src": "Good morning.",
+                            "dst": "Good morning translated.",
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    await translate_text("Good morning.", client=client)
+    payload = json.loads(client.content.decode("utf-8"))
+
+    assert payload["common"]["app_id"] == "legacy_app_id"
+    assert client.headers["Authorization"].startswith('api_key="legacy_api_key"')
+
+
+@pytest.mark.anyio
 async def test_translate_text_accepts_explicit_credentials(monkeypatch) -> None:
-    monkeypatch.delenv("XFYUN_APP_ID", raising=False)
-    monkeypatch.delenv("XFYUN_API_KEY", raising=False)
-    monkeypatch.delenv("XFYUN_API_SECRET", raising=False)
+    clear_xfyun_env(monkeypatch)
 
     client = FakeAsyncClient(
         FakeResponse(

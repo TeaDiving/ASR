@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.xfyun_ai_correction import AICorrectionError
 from backend.xfyun_translation import TranslationError, XFYUNCredentials
 
 
@@ -60,6 +61,94 @@ def test_translate_api_uses_corrected_text_before_translation(monkeypatch) -> No
     assert response.json()["normalizedText"] == "hellow wrold"
     assert response.json()["translatedText"] == "Translated: Hello world"
     assert captured_text == "Hello world"
+
+
+def test_translate_api_uses_ai_corrected_text_before_translation(monkeypatch) -> None:
+    captured_text = None
+
+    async def fake_ai_correct_text(text: str, previous_context=None) -> str:
+        assert text == "Hello world"
+        assert previous_context is None
+        return "Hello, world."
+
+    async def capture_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        nonlocal captured_text
+        captured_text = text
+        return f"Translated: {text}"
+
+    monkeypatch.setattr("backend.main.ai_correct_text", fake_ai_correct_text)
+    monkeypatch.setattr("backend.main.translate_text", capture_text)
+
+    response = client.post(
+        "/api/translate",
+        json={
+            "text": "hellow wrold",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["normalizedText"] == "hellow wrold"
+    assert response.json()["translatedText"] == "Translated: Hello, world."
+    assert captured_text == "Hello, world."
+
+
+def test_translate_api_falls_back_when_ai_correction_fails(monkeypatch) -> None:
+    captured_text = None
+
+    async def fail_ai_correction(text: str, previous_context=None) -> str:
+        raise AICorrectionError("failed")
+
+    async def capture_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        nonlocal captured_text
+        captured_text = text
+        return f"Translated: {text}"
+
+    monkeypatch.setattr("backend.main.ai_correct_text", fail_ai_correction)
+    monkeypatch.setattr("backend.main.translate_text", capture_text)
+
+    response = client.post(
+        "/api/translate",
+        json={
+            "text": "hellow wrold",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["translatedText"] == "Translated: Hello world"
+    assert captured_text == "Hello world"
+
+
+def test_translate_api_passes_previous_correction_context_to_ai(monkeypatch) -> None:
+    captured_previous_contexts = []
+
+    async def fake_ai_correct_text(text: str, previous_context=None) -> str:
+        captured_previous_contexts.append(previous_context)
+        return text
+
+    async def fake_translate_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        return f"Translated: {text}"
+
+    monkeypatch.setattr("backend.main.ai_correct_text", fake_ai_correct_text)
+    monkeypatch.setattr("backend.main.translate_text", fake_translate_text)
+
+    first_response = client.post("/api/translate", json={"text": "hellow"})
+    second_response = client.post("/api/translate", json={"text": "wrold"})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert captured_previous_contexts[0] is None
+    assert captured_previous_contexts[1].original_text == "hellow"
+    assert captured_previous_contexts[1].rule_corrected_text == "Hello"
+    assert captured_previous_contexts[1].ai_corrected_text == "Hello"
 
 
 def test_plugin_page_is_served() -> None:

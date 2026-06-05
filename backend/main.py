@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,14 @@ from backend.subtitle_message import build_subtitle_message
 from backend.subtitle_stream import format_sse_event, subtitle_broadcaster
 from backend.text_correction import auto_correct_text
 from backend.text_preprocessing import normalize_text
+from backend.xfyun_ai_correction import (
+    AICorrectionConfigurationError,
+    AICorrectionError,
+    CorrectionContext,
+    ai_correct_text,
+    correction_context_memory,
+    second_check_corrected_text,
+)
 from backend.xfyun_translation import (
     TranslationConfigurationError,
     TranslationError,
@@ -24,6 +33,12 @@ app = FastAPI()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_ASR_FIELDS = {"id", "text", "timestamp", "isFinal"}
 USER_CREDENTIALS_FIELD = "xfyunCredentials"
+
+
+@dataclass(frozen=True)
+class PreparedTranslationText:
+    text: str
+    correction_context: CorrectionContext
 
 
 def is_valid_asr_text_message(message: Any) -> bool:
@@ -72,8 +87,39 @@ def read_user_credentials(message: dict[str, Any]) -> XFYUNCredentials | None:
     return XFYUNCredentials(app_id=app_id, api_key=api_key, api_secret=api_secret)
 
 
-def prepare_translation_text(normalized_text: str) -> str:
-    return auto_correct_text(normalized_text)
+async def prepare_translation_text(normalized_text: str) -> PreparedTranslationText:
+    rule_corrected_text = auto_correct_text(normalized_text)
+    checked_text = second_check_corrected_text(rule_corrected_text)
+
+    if not checked_text:
+        return PreparedTranslationText(
+            text="",
+            correction_context=CorrectionContext(
+                original_text=normalized_text,
+                rule_corrected_text=rule_corrected_text,
+                ai_corrected_text="",
+            ),
+        )
+
+    try:
+        ai_corrected_text = await ai_correct_text(
+            checked_text,
+            previous_context=correction_context_memory.get_previous_context(),
+        )
+    except (AICorrectionConfigurationError, AICorrectionError):
+        print("AI correction failed, falling back to rule-corrected text")
+        final_text = checked_text
+    else:
+        final_text = ai_corrected_text
+
+    return PreparedTranslationText(
+        text=final_text,
+        correction_context=CorrectionContext(
+            original_text=normalized_text,
+            rule_corrected_text=checked_text,
+            ai_corrected_text=final_text,
+        ),
+    )
 
 
 @app.get("/health")
@@ -98,16 +144,18 @@ async def translate_text_api(payload: dict[str, Any]) -> dict[str, Any]:
     if not normalized_text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
-    corrected_text = prepare_translation_text(normalized_text)
+    prepared_text = await prepare_translation_text(normalized_text)
 
-    if not corrected_text:
+    if not prepared_text.text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
     try:
         credentials = read_user_credentials(payload)
-        translated_text = await translate_text(corrected_text, credentials=credentials)
+        translated_text = await translate_text(prepared_text.text, credentials=credentials)
     except (TranslationConfigurationError, TranslationError) as exc:
         raise HTTPException(status_code=502, detail="Translation failed") from exc
+
+    correction_context_memory.remember(prepared_text.correction_context)
 
     return {
         "ok": True,
@@ -128,9 +176,9 @@ async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
     if not normalized_text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
-    corrected_text = prepare_translation_text(normalized_text)
+    prepared_text = await prepare_translation_text(normalized_text)
 
-    if not corrected_text:
+    if not prepared_text.text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
     is_final = payload.get("isFinal", True)
@@ -140,9 +188,11 @@ async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         credentials = read_user_credentials(payload)
-        translated_text = await translate_text(corrected_text, credentials=credentials)
+        translated_text = await translate_text(prepared_text.text, credentials=credentials)
     except (TranslationConfigurationError, TranslationError) as exc:
         raise HTTPException(status_code=502, detail="Translation failed") from exc
+
+    correction_context_memory.remember(prepared_text.correction_context)
 
     subtitle_message = build_subtitle_message(
         source_text=source_text,
@@ -218,9 +268,9 @@ async def receive_asr_text(websocket: WebSocket) -> None:
             continue
 
         normalized_text = normalize_text(message["text"])
-        corrected_text = prepare_translation_text(normalized_text)
+        prepared_text = await prepare_translation_text(normalized_text)
 
-        if not corrected_text:
+        if not prepared_text.text:
             await websocket.send_json(
                 {
                     "type": "error",
@@ -233,7 +283,7 @@ async def receive_asr_text(websocket: WebSocket) -> None:
         print(f"Received ASR text: {normalized_text}")
         try:
             credentials = read_user_credentials(message)
-            translated_text = await translate_text(corrected_text, credentials=credentials)
+            translated_text = await translate_text(prepared_text.text, credentials=credentials)
         except (TranslationConfigurationError, TranslationError):
             await websocket.send_json(
                 {
@@ -243,6 +293,8 @@ async def receive_asr_text(websocket: WebSocket) -> None:
                 }
             )
             continue
+
+        correction_context_memory.remember(prepared_text.correction_context)
 
         await websocket.send_json(
             {

@@ -68,6 +68,39 @@ def test_subtitle_api_uses_corrected_text_before_translation(monkeypatch) -> Non
     assert captured_text == "OpenAI"
 
 
+def test_subtitle_api_uses_ai_corrected_text_before_translation(monkeypatch) -> None:
+    captured_text = None
+
+    async def fake_ai_correct_text(text: str, previous_context=None) -> str:
+        assert text == "OpenAI"
+        return "OpenAI."
+
+    async def capture_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        nonlocal captured_text
+        captured_text = text
+        return f"Translated: {text}"
+
+    monkeypatch.setattr("backend.main.ai_correct_text", fake_ai_correct_text)
+    monkeypatch.setattr("backend.main.translate_text", capture_text)
+
+    response = client.post(
+        "/api/subtitle",
+        json={
+            "text": "open ai",
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["sourceText"] == "open ai"
+    assert body["normalizedText"] == "open ai"
+    assert body["translatedText"] == "Translated: OpenAI."
+    assert captured_text == "OpenAI."
+
+
 def test_subtitle_api_publishes_subtitle_message(monkeypatch) -> None:
     published_messages = []
 
