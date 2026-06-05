@@ -37,5 +37,31 @@ def test_extension_content_script_injects_subtitle_overlay() -> None:
     content_js = (EXTENSION_DIR / "content.js").read_text(encoding="utf-8")
 
     assert "asr-translation-subtitle-overlay" in content_js
+    assert "asr-translation-subtitle-overlay-style" in content_js
     assert "ASR_SHOW_OVERLAY" in content_js
     assert "ASR_RENDER_SUBTITLE" in content_js
+
+
+def test_extension_subtitle_overlay_uses_readable_responsive_styles() -> None:
+    content_js = (EXTENSION_DIR / "content.js").read_text(encoding="utf-8")
+
+    assert "color: #ffffff" in content_js
+    assert "background: rgba(0, 0, 0, 0.72)" in content_js
+    assert "width: min(860px, calc(100vw - 32px))" in content_js
+    assert "white-space: normal" in content_js
+    assert "overflow-wrap: anywhere" in content_js
+    assert "text-align: center" in content_js
+    assert 'overlay.style.pointerEvents = "none"' in content_js
+    assert "bottom: calc(88px + env(safe-area-inset-bottom))" in content_js
+    assert "@media (max-width: 640px)" in content_js
+    assert "width: calc(100vw - 24px)" in content_js
+    assert "bottom: calc(72px + env(safe-area-inset-bottom))" in content_js
+
+
+def test_extension_subtitle_overlay_makes_chinese_larger_than_english() -> None:
+    content_js = (EXTENSION_DIR / "content.js").read_text(encoding="utf-8")
+
+    assert "asr-subtitle-english" in content_js
+    assert "asr-subtitle-chinese" in content_js
+    assert "font-size: 16px" in content_js
+    assert "font-size: 28px" in content_js
