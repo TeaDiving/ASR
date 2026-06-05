@@ -9,7 +9,10 @@ from email.utils import format_datetime
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 TRANSLATION_URL = "https://itrans.xfyun.cn/v2/its"
 TRANSLATION_HOST = "itrans.xfyun.cn"
@@ -126,9 +129,12 @@ def parse_translation_response(response_data: dict[str, Any]) -> str:
 
 async def translate_text(
     text: str,
+    credentials: XFYUNCredentials | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> str:
-    credentials = read_xfyun_credentials()
+    if credentials is None:
+        credentials = read_xfyun_credentials()
+
     payload = build_translation_payload(text, credentials.app_id)
     body = dump_payload(payload)
     headers = build_headers(body, credentials)

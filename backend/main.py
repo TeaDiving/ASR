@@ -1,12 +1,15 @@
 import json
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 
 from backend.text_preprocessing import normalize_text
 from backend.xfyun_translation import (
     TranslationConfigurationError,
     TranslationError,
+    XFYUNCredentials,
     translate_text,
 )
 
@@ -14,7 +17,9 @@ from backend.xfyun_translation import (
 app = FastAPI()
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REQUIRED_ASR_FIELDS = {"id", "text", "timestamp", "isFinal"}
+USER_CREDENTIALS_FIELD = "xfyunCredentials"
 
 
 def is_valid_asr_text_message(message: Any) -> bool:
@@ -44,9 +49,58 @@ def is_valid_asr_text_message(message: Any) -> bool:
     return True
 
 
+def read_user_credentials(message: dict[str, Any]) -> XFYUNCredentials | None:
+    raw_credentials = message.get(USER_CREDENTIALS_FIELD)
+
+    if raw_credentials is None:
+        return None
+
+    if not isinstance(raw_credentials, dict):
+        raise TranslationConfigurationError("Invalid user credentials")
+
+    app_id = raw_credentials.get("appId")
+    api_key = raw_credentials.get("apiKey")
+    api_secret = raw_credentials.get("apiSecret")
+
+    if not all(isinstance(value, str) and value for value in (app_id, api_key, api_secret)):
+        raise TranslationConfigurationError("Invalid user credentials")
+
+    return XFYUNCredentials(app_id=app_id, api_key=api_key, api_secret=api_secret)
+
+
 @app.get("/health")
 def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/plugin")
+def plugin_page() -> FileResponse:
+    return FileResponse(PROJECT_ROOT / "frontend" / "plugin.html")
+
+
+@app.post("/api/translate")
+async def translate_text_api(payload: dict[str, Any]) -> dict[str, Any]:
+    text = payload.get("text")
+
+    if not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="Invalid text")
+
+    normalized_text = normalize_text(text)
+
+    if not normalized_text:
+        raise HTTPException(status_code=400, detail="Invalid text")
+
+    try:
+        credentials = read_user_credentials(payload)
+        translated_text = await translate_text(normalized_text, credentials=credentials)
+    except (TranslationConfigurationError, TranslationError) as exc:
+        raise HTTPException(status_code=502, detail="Translation failed") from exc
+
+    return {
+        "ok": True,
+        "normalizedText": normalized_text,
+        "translatedText": translated_text,
+    }
 
 
 @app.websocket("/ws/asr")
@@ -85,7 +139,8 @@ async def receive_asr_text(websocket: WebSocket) -> None:
 
         print(f"Received ASR text: {normalized_text}")
         try:
-            translated_text = await translate_text(normalized_text)
+            credentials = read_user_credentials(message)
+            translated_text = await translate_text(normalized_text, credentials=credentials)
         except (TranslationConfigurationError, TranslationError):
             await websocket.send_json(
                 {

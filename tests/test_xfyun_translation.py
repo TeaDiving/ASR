@@ -9,6 +9,7 @@ from backend.xfyun_translation import (
     TRANSLATION_URL,
     TranslationConfigurationError,
     TranslationError,
+    XFYUNCredentials,
     build_translation_payload,
     encode_text,
     parse_translation_response,
@@ -127,3 +128,42 @@ async def test_translate_text_posts_expected_payload(monkeypatch) -> None:
     assert payload == build_translation_payload("Good morning.", "test_app_id")
     assert client.headers["Authorization"].startswith('api_key="test_api_key"')
     assert client.headers["Digest"].startswith("SHA-256=")
+
+
+@pytest.mark.anyio
+async def test_translate_text_accepts_explicit_credentials(monkeypatch) -> None:
+    monkeypatch.delenv("XFYUN_APP_ID", raising=False)
+    monkeypatch.delenv("XFYUN_API_KEY", raising=False)
+    monkeypatch.delenv("XFYUN_API_SECRET", raising=False)
+
+    client = FakeAsyncClient(
+        FakeResponse(
+            {
+                "code": 0,
+                "message": "success",
+                "data": {
+                    "result": {
+                        "trans_result": {
+                            "src": "Good morning.",
+                            "dst": "早上好。",
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    translated_text = await translate_text(
+        "Good morning.",
+        credentials=XFYUNCredentials(
+            app_id="explicit_app_id",
+            api_key="explicit_api_key",
+            api_secret="explicit_api_secret",
+        ),
+        client=client,
+    )
+    payload = json.loads(client.content.decode("utf-8"))
+
+    assert translated_text == "早上好。"
+    assert payload["common"]["app_id"] == "explicit_app_id"
+    assert client.headers["Authorization"].startswith('api_key="explicit_api_key"')

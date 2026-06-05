@@ -12,6 +12,22 @@ Person A sends ASR JSON messages to:
 ws://localhost:8765/ws/asr
 ```
 
+Open the webpage plugin after starting the service:
+
+```text
+http://127.0.0.1:8765/plugin
+```
+
+The plugin lets users enter their own XFYUN API credentials and English text for translation.
+
+Load the browser extension prototype from:
+
+```text
+extension/
+```
+
+In Chrome or Edge, open the extensions page, enable developer mode, and load `extension/` as an unpacked extension. The popup lets users save XFYUN API credentials, send English test text to `/api/translate`, and render the translated Chinese subtitle overlay on the current webpage.
+
 XFYUN machine translation credentials:
 
 - `.env`: private credentials, keep locally and do not upload.
