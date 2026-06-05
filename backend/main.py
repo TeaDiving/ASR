@@ -4,6 +4,11 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from backend.text_preprocessing import normalize_text
+from backend.xfyun_translation import (
+    TranslationConfigurationError,
+    TranslationError,
+    translate_text,
+)
 
 
 app = FastAPI()
@@ -79,11 +84,24 @@ async def receive_asr_text(websocket: WebSocket) -> None:
         normalized_text = normalize_text(message["text"])
 
         print(f"Received ASR text: {normalized_text}")
+        try:
+            translated_text = await translate_text(normalized_text)
+        except (TranslationConfigurationError, TranslationError):
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "ok": False,
+                    "message": "Translation failed",
+                }
+            )
+            continue
+
         await websocket.send_json(
             {
                 "type": "asr_received",
                 "id": message["id"],
                 "ok": True,
                 "normalizedText": normalized_text,
+                "translatedText": translated_text,
             }
         )

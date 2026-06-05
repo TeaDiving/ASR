@@ -4,7 +4,8 @@
 
 PR1 defines the data handoff boundary between Person A and Person B.
 PR2 implements the WebSocket JSON receiving entrypoint for Person B.
-PR3 adds basic English text preprocessing and returns `normalizedText`. This document does not define translation, correction, or subtitle UI behavior.
+PR3 adds basic English text preprocessing and returns `normalizedText`.
+PR4 adds XFYUN machine translation and returns `translatedText`. This document does not define correction or subtitle UI behavior.
 
 ## Module Boundary
 
@@ -17,7 +18,7 @@ audio capture -> real-time audio processing -> Whisper recognition -> send ASR J
 Person B is responsible for:
 
 ```text
-receive ASR JSON message over WebSocket -> normalize English text -> correction -> AI translation -> subtitle packaging -> subtitle display
+receive ASR JSON message over WebSocket -> normalize English text -> XFYUN machine translation -> subtitle packaging -> subtitle display
 ```
 
 The boundary between Person A and Person B is:
@@ -70,6 +71,7 @@ Person A must send one `ASRTextMessage` object to `/ws/asr`.
 - Person B does not depend on Person A's audio capture, audio stream processing, or Whisper implementation.
 - `data/asr-output.example.json` is only an example payload, not a runtime handoff file.
 - PR3 returns `normalizedText` after trimming and collapsing whitespace in `text`.
+- PR4 returns `translatedText` from XFYUN machine translation.
 
 ## Success Response
 
@@ -80,7 +82,8 @@ When Person B receives a valid `ASRTextMessage`, it returns:
   "type": "asr_received",
   "id": "asr_001",
   "ok": true,
-  "normalizedText": "Good morning everyone."
+  "normalizedText": "Good morning everyone.",
+  "translatedText": "大家早上好。"
 }
 ```
 
@@ -90,8 +93,9 @@ When Person B receives a valid `ASRTextMessage`, it returns:
 - Person B can receive `ASRTextMessage` messages through `/ws/asr`.
 - Both sides use `text` as the English recognition text field.
 - Person B returns `normalizedText` for valid non-empty English text.
+- Person B returns `translatedText` after XFYUN machine translation succeeds.
 - `data/asr-output.example.json` can be used as the reference example.
-- No translation, correction, file watcher, or UI logic is included in PR3.
+- No correction, subtitle push, file watcher, or UI logic is included in PR4.
 
 ## Local Run Command
 
