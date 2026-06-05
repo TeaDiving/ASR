@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.subtitle_message import build_subtitle_message
 from backend.subtitle_stream import format_sse_event, subtitle_broadcaster
+from backend.text_correction import auto_correct_text
 from backend.text_preprocessing import normalize_text
 from backend.xfyun_translation import (
     TranslationConfigurationError,
@@ -71,6 +72,10 @@ def read_user_credentials(message: dict[str, Any]) -> XFYUNCredentials | None:
     return XFYUNCredentials(app_id=app_id, api_key=api_key, api_secret=api_secret)
 
 
+def prepare_translation_text(normalized_text: str) -> str:
+    return auto_correct_text(normalized_text)
+
+
 @app.get("/health")
 def health() -> dict[str, bool]:
     return {"ok": True}
@@ -93,9 +98,14 @@ async def translate_text_api(payload: dict[str, Any]) -> dict[str, Any]:
     if not normalized_text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
+    corrected_text = prepare_translation_text(normalized_text)
+
+    if not corrected_text:
+        raise HTTPException(status_code=400, detail="Invalid text")
+
     try:
         credentials = read_user_credentials(payload)
-        translated_text = await translate_text(normalized_text, credentials=credentials)
+        translated_text = await translate_text(corrected_text, credentials=credentials)
     except (TranslationConfigurationError, TranslationError) as exc:
         raise HTTPException(status_code=502, detail="Translation failed") from exc
 
@@ -118,6 +128,11 @@ async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
     if not normalized_text:
         raise HTTPException(status_code=400, detail="Invalid text")
 
+    corrected_text = prepare_translation_text(normalized_text)
+
+    if not corrected_text:
+        raise HTTPException(status_code=400, detail="Invalid text")
+
     is_final = payload.get("isFinal", True)
 
     if not isinstance(is_final, bool):
@@ -125,7 +140,7 @@ async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         credentials = read_user_credentials(payload)
-        translated_text = await translate_text(normalized_text, credentials=credentials)
+        translated_text = await translate_text(corrected_text, credentials=credentials)
     except (TranslationConfigurationError, TranslationError) as exc:
         raise HTTPException(status_code=502, detail="Translation failed") from exc
 
@@ -203,11 +218,22 @@ async def receive_asr_text(websocket: WebSocket) -> None:
             continue
 
         normalized_text = normalize_text(message["text"])
+        corrected_text = prepare_translation_text(normalized_text)
+
+        if not corrected_text:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "ok": False,
+                    "message": "Invalid ASRTextMessage",
+                }
+            )
+            continue
 
         print(f"Received ASR text: {normalized_text}")
         try:
             credentials = read_user_credentials(message)
-            translated_text = await translate_text(normalized_text, credentials=credentials)
+            translated_text = await translate_text(corrected_text, credentials=credentials)
         except (TranslationConfigurationError, TranslationError):
             await websocket.send_json(
                 {

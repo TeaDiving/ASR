@@ -36,6 +36,32 @@ def test_translate_api_returns_translated_text(monkeypatch) -> None:
     }
 
 
+def test_translate_api_uses_corrected_text_before_translation(monkeypatch) -> None:
+    captured_text = None
+
+    async def capture_text(
+        text: str,
+        credentials: XFYUNCredentials | None = None,
+    ) -> str:
+        nonlocal captured_text
+        captured_text = text
+        return f"Translated: {text}"
+
+    monkeypatch.setattr("backend.main.translate_text", capture_text)
+
+    response = client.post(
+        "/api/translate",
+        json={
+            "text": "hellow wrold",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["normalizedText"] == "hellow wrold"
+    assert response.json()["translatedText"] == "Translated: Hello world"
+    assert captured_text == "Hello world"
+
+
 def test_plugin_page_is_served() -> None:
     response = client.get("/plugin")
 
