@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
+from backend.subtitle_message import build_subtitle_message
 from backend.text_preprocessing import normalize_text
 from backend.xfyun_translation import (
     TranslationConfigurationError,
@@ -101,6 +102,37 @@ async def translate_text_api(payload: dict[str, Any]) -> dict[str, Any]:
         "normalizedText": normalized_text,
         "translatedText": translated_text,
     }
+
+
+@app.post("/api/subtitle")
+async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
+    source_text = payload.get("text")
+
+    if not isinstance(source_text, str):
+        raise HTTPException(status_code=400, detail="Invalid text")
+
+    normalized_text = normalize_text(source_text)
+
+    if not normalized_text:
+        raise HTTPException(status_code=400, detail="Invalid text")
+
+    is_final = payload.get("isFinal", True)
+
+    if not isinstance(is_final, bool):
+        raise HTTPException(status_code=400, detail="Invalid isFinal")
+
+    try:
+        credentials = read_user_credentials(payload)
+        translated_text = await translate_text(normalized_text, credentials=credentials)
+    except (TranslationConfigurationError, TranslationError) as exc:
+        raise HTTPException(status_code=502, detail="Translation failed") from exc
+
+    return build_subtitle_message(
+        source_text=source_text,
+        normalized_text=normalized_text,
+        translated_text=translated_text,
+        is_final=is_final,
+    )
 
 
 @app.websocket("/ws/asr")

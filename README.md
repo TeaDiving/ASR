@@ -43,3 +43,23 @@ XFYUN_API_SECRET=your_api_secret
 ```
 
 Successful ASR messages return both `normalizedText` and `translatedText`.
+
+Create a subtitle result object:
+
+```text
+POST http://127.0.0.1:8765/api/subtitle
+```
+
+```json
+{
+  "text": "Good morning everyone.",
+  "isFinal": true,
+  "xfyunCredentials": {
+    "appId": "your_app_id",
+    "apiKey": "your_api_key",
+    "apiSecret": "your_api_secret"
+  }
+}
+```
+
+The response includes `id`, `sourceText`, `normalizedText`, `translatedText`, `timestamp`, and `isFinal`.
