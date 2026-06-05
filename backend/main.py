@@ -231,6 +231,7 @@ async def subtitle_stream_api(request: Request) -> StreamingResponse:
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
         },
     )
 

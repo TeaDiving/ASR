@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from backend.main import subtitle_stream_api
 from backend.subtitle_stream import SubtitleBroadcaster, format_sse_event
 
 
@@ -32,6 +33,17 @@ def test_format_sse_event_contains_subtitle_event_and_json_data() -> None:
 
     data_line = next(line for line in event.splitlines() if line.startswith("data: "))
     assert json.loads(data_line.removeprefix("data: ")) == message
+
+
+@pytest.mark.anyio
+async def test_subtitle_stream_allows_extension_cors() -> None:
+    class FakeRequest:
+        async def is_disconnected(self) -> bool:
+            return True
+
+    response = await subtitle_stream_api(FakeRequest())
+
+    assert response.headers["access-control-allow-origin"] == "*"
 
 
 @pytest.mark.anyio

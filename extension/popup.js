@@ -107,8 +107,13 @@ async function translateText(event) {
 saveButton.addEventListener("click", saveSettings);
 overlayButton.addEventListener("click", async () => {
   try {
-    await sendToActiveTab({ type: "ASR_SHOW_OVERLAY" });
-    setStatus("Overlay shown on current tab");
+    const values = getFormValues();
+    await saveSettings();
+    await sendToActiveTab({
+      type: "ASR_START_LIVE_SUBTITLE",
+      backendUrl: values.backendUrl,
+    });
+    setStatus("Live subtitle overlay started");
   } catch (error) {
     setStatus(error.message || "Cannot show overlay", true);
   }

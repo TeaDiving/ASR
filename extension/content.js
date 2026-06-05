@@ -1,6 +1,9 @@
 (function () {
   const OVERLAY_ID = "asr-translation-subtitle-overlay";
   const OVERLAY_STYLE_ID = "asr-translation-subtitle-overlay-style";
+  const DEFAULT_BACKEND_URL = "http://127.0.0.1:8765";
+
+  let subtitleStream = null;
 
   function ensureOverlayStyles() {
     if (document.getElementById(OVERLAY_STYLE_ID)) {
@@ -106,18 +109,62 @@
     overlay.style.display = "block";
   }
 
+  function normalizeBackendUrl(backendUrl) {
+    return String(backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
+  }
+
+  function disconnectSubtitleStream() {
+    if (subtitleStream) {
+      subtitleStream.close();
+      subtitleStream = null;
+    }
+  }
+
+  function connectSubtitleStream(backendUrl) {
+    disconnectSubtitleStream();
+    ensureOverlay();
+
+    const streamUrl = `${normalizeBackendUrl(backendUrl)}/api/subtitle/stream`;
+    subtitleStream = new EventSource(streamUrl);
+
+    subtitleStream.addEventListener("subtitle", (event) => {
+      try {
+        const subtitle = JSON.parse(event.data);
+
+        if (!subtitle || !subtitle.translatedText) {
+          return;
+        }
+
+        renderSubtitle(subtitle.sourceText, subtitle.translatedText);
+      } catch (error) {
+        console.error("Invalid subtitle stream event", error);
+      }
+    });
+
+    subtitleStream.onerror = (error) => {
+      console.error("Subtitle stream error", error);
+    };
+  }
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || !message.type) {
       return false;
     }
 
+    if (message.type === "ASR_START_LIVE_SUBTITLE") {
+      connectSubtitleStream(message.backendUrl);
+      sendResponse({ ok: true });
+      return true;
+    }
+
     if (message.type === "ASR_SHOW_OVERLAY") {
-      renderSubtitle("Subtitle overlay ready", "字幕层已就绪");
+      ensureOverlay();
       sendResponse({ ok: true });
       return true;
     }
 
     if (message.type === "ASR_HIDE_OVERLAY") {
+      disconnectSubtitleStream();
       const overlay = document.getElementById(OVERLAY_ID);
       if (overlay) {
         overlay.style.display = "none";

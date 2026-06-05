@@ -33,6 +33,14 @@ def test_extension_popup_calls_translation_api_and_renders_subtitle() -> None:
     assert "ASR_RENDER_SUBTITLE" in popup_js
 
 
+def test_extension_popup_starts_live_subtitle_overlay() -> None:
+    popup_js = (EXTENSION_DIR / "popup.js").read_text(encoding="utf-8")
+
+    assert "ASR_START_LIVE_SUBTITLE" in popup_js
+    assert "backendUrl: values.backendUrl" in popup_js
+    assert "Live subtitle overlay started" in popup_js
+
+
 def test_extension_content_script_injects_subtitle_overlay() -> None:
     content_js = (EXTENSION_DIR / "content.js").read_text(encoding="utf-8")
 
@@ -40,6 +48,19 @@ def test_extension_content_script_injects_subtitle_overlay() -> None:
     assert "asr-translation-subtitle-overlay-style" in content_js
     assert "ASR_SHOW_OVERLAY" in content_js
     assert "ASR_RENDER_SUBTITLE" in content_js
+
+
+def test_extension_content_script_subscribes_to_subtitle_stream() -> None:
+    content_js = (EXTENSION_DIR / "content.js").read_text(encoding="utf-8")
+
+    assert "ASR_START_LIVE_SUBTITLE" in content_js
+    assert "new EventSource(streamUrl)" in content_js
+    assert "/api/subtitle/stream" in content_js
+    assert 'subtitleStream.addEventListener("subtitle"' in content_js
+    assert "JSON.parse(event.data)" in content_js
+    assert "renderSubtitle(subtitle.sourceText, subtitle.translatedText)" in content_js
+    assert "subtitleStream.close()" in content_js
+    assert "disconnectSubtitleStream();" in content_js
 
 
 def test_extension_subtitle_overlay_uses_readable_responsive_styles() -> None:
