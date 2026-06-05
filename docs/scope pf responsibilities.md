@@ -3,7 +3,8 @@
 ## Summary
 
 PR1 defines the data handoff boundary between Person A and Person B.
-PR2 implements the WebSocket JSON receiving entrypoint for Person B. This document does not define translation, correction, or subtitle UI behavior.
+PR2 implements the WebSocket JSON receiving entrypoint for Person B.
+PR3 adds basic English text preprocessing and returns `normalizedText`. This document does not define translation, correction, or subtitle UI behavior.
 
 ## Module Boundary
 
@@ -16,7 +17,7 @@ audio capture -> real-time audio processing -> Whisper recognition -> send ASR J
 Person B is responsible for:
 
 ```text
-receive ASR JSON message over WebSocket -> correction -> AI translation -> subtitle packaging -> subtitle display
+receive ASR JSON message over WebSocket -> normalize English text -> correction -> AI translation -> subtitle packaging -> subtitle display
 ```
 
 The boundary between Person A and Person B is:
@@ -68,15 +69,29 @@ Person A must send one `ASRTextMessage` object to `/ws/asr`.
 - Person B depends only on the JSON fields defined in `ASRTextMessage`.
 - Person B does not depend on Person A's audio capture, audio stream processing, or Whisper implementation.
 - `data/asr-output.example.json` is only an example payload, not a runtime handoff file.
-- PR2 only implements the receiving entrypoint and acknowledgement response.
+- PR3 returns `normalizedText` after trimming and collapsing whitespace in `text`.
+
+## Success Response
+
+When Person B receives a valid `ASRTextMessage`, it returns:
+
+```json
+{
+  "type": "asr_received",
+  "id": "asr_001",
+  "ok": true,
+  "normalizedText": "Good morning everyone."
+}
+```
 
 ## Acceptance Criteria
 
 - Person A knows the exact WebSocket endpoint to send to.
 - Person B can receive `ASRTextMessage` messages through `/ws/asr`.
 - Both sides use `text` as the English recognition text field.
+- Person B returns `normalizedText` for valid non-empty English text.
 - `data/asr-output.example.json` can be used as the reference example.
-- No translation, correction, file watcher, or UI logic is included in PR2.
+- No translation, correction, file watcher, or UI logic is included in PR3.
 
 ## Local Run Command
 

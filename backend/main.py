@@ -3,6 +3,8 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from backend.text_preprocessing import normalize_text
+
 
 app = FastAPI()
 
@@ -21,6 +23,9 @@ def is_valid_asr_text_message(message: Any) -> bool:
         return False
 
     if not isinstance(message["text"], str):
+        return False
+
+    if not normalize_text(message["text"]):
         return False
 
     if isinstance(message["timestamp"], bool) or not isinstance(
@@ -71,11 +76,14 @@ async def receive_asr_text(websocket: WebSocket) -> None:
             )
             continue
 
-        print(f"Received ASR text: {message['text']}")
+        normalized_text = normalize_text(message["text"])
+
+        print(f"Received ASR text: {normalized_text}")
         await websocket.send_json(
             {
                 "type": "asr_received",
                 "id": message["id"],
                 "ok": True,
+                "normalizedText": normalized_text,
             }
         )

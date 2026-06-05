@@ -29,6 +29,27 @@ def test_websocket_accepts_valid_asr_message() -> None:
         "type": "asr_received",
         "id": "asr_001",
         "ok": True,
+        "normalizedText": "Good morning everyone.",
+    }
+
+
+def test_websocket_returns_normalized_text() -> None:
+    payload = {
+        "id": "asr_002",
+        "text": "  Good   morning\n everyone.  ",
+        "timestamp": 1710000000000,
+        "isFinal": True,
+    }
+
+    with client.websocket_connect("/ws/asr") as websocket:
+        websocket.send_json(payload)
+        response = websocket.receive_json()
+
+    assert response == {
+        "type": "asr_received",
+        "id": "asr_002",
+        "ok": True,
+        "normalizedText": "Good morning everyone.",
     }
 
 
@@ -37,6 +58,25 @@ def test_websocket_rejects_missing_required_field() -> None:
         "id": "asr_001",
         "text": "Good morning everyone.",
         "timestamp": 1710000000000,
+    }
+
+    with client.websocket_connect("/ws/asr") as websocket:
+        websocket.send_json(payload)
+        response = websocket.receive_json()
+
+    assert response == {
+        "type": "error",
+        "ok": False,
+        "message": "Invalid ASRTextMessage",
+    }
+
+
+def test_websocket_rejects_empty_normalized_text() -> None:
+    payload = {
+        "id": "asr_003",
+        "text": "   \n\t   ",
+        "timestamp": 1710000000000,
+        "isFinal": True,
     }
 
     with client.websocket_connect("/ws/asr") as websocket:
