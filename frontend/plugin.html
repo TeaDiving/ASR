@@ -180,7 +180,7 @@
         white-space: pre-wrap;
       }
 
-      .latest-subtitle {
+      .subtitle-history {
         display: grid;
         gap: 14px;
         margin: 0 24px 24px;
@@ -190,39 +190,51 @@
         background: #fbfcfe;
       }
 
-      .latest-subtitle[hidden] {
+      .subtitle-history[hidden] {
         display: none;
       }
 
-      .latest-subtitle h2 {
+      .subtitle-history h2 {
         margin: 0;
         font-size: 16px;
       }
 
-      .subtitle-display {
+      .subtitle-history-list {
         display: grid;
-        gap: 10px;
+        gap: 12px;
+        max-height: 320px;
+        overflow-y: auto;
+        padding-right: 4px;
       }
 
-      .subtitle-display-block {
+      .subtitle-history-item {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .subtitle-history-block {
         display: grid;
         gap: 5px;
       }
 
-      .subtitle-display-label {
+      .subtitle-history-label {
         color: var(--muted);
         font-size: 12px;
         font-weight: 700;
         text-transform: uppercase;
       }
 
-      .subtitle-display-text {
+      .subtitle-history-text {
         margin: 0;
         line-height: 1.55;
         white-space: pre-wrap;
       }
 
-      .subtitle-display-text.chinese {
+      .subtitle-history-text.chinese {
         font-size: 18px;
         font-weight: 650;
       }
@@ -250,7 +262,7 @@
           margin: 0 18px 18px;
         }
 
-        .latest-subtitle {
+        .subtitle-history {
           margin: 0 18px 18px;
           padding: 16px;
         }
@@ -308,26 +320,9 @@
         </div>
       </section>
 
-      <section
-        id="latest-subtitle"
-        class="latest-subtitle"
-        aria-live="polite"
-        hidden
-      >
+      <section id="subtitle-history" class="subtitle-history" aria-live="polite" hidden>
         <h2>Live Subtitles</h2>
-        <div class="subtitle-display">
-          <div class="subtitle-display-block">
-            <span class="subtitle-display-label">English</span>
-            <p id="latest-source-text" class="subtitle-display-text"></p>
-          </div>
-          <div class="subtitle-display-block">
-            <span class="subtitle-display-label">Chinese</span>
-            <p
-              id="latest-translated-text"
-              class="subtitle-display-text chinese"
-            ></p>
-          </div>
-        </div>
+        <div id="subtitle-history-list" class="subtitle-history-list"></div>
       </section>
     </main>
 
@@ -338,9 +333,10 @@
       const result = document.querySelector("#result");
       const normalizedText = document.querySelector("#normalized-text");
       const translatedText = document.querySelector("#translated-text");
-      const latestSubtitle = document.querySelector("#latest-subtitle");
-      const latestSourceText = document.querySelector("#latest-source-text");
-      const latestTranslatedText = document.querySelector("#latest-translated-text");
+      const subtitleHistoryContainer = document.querySelector("#subtitle-history");
+      const subtitleHistoryList = document.querySelector("#subtitle-history-list");
+      const subtitleHistory = [];
+      const MAX_SUBTITLE_HISTORY = 5;
       let subtitleStream = null;
 
       function setStatus(message, isError = false) {
@@ -348,19 +344,61 @@
         status.classList.toggle("error", isError);
       }
 
-      function renderLatestSubtitle(subtitle) {
-        if (
-          !subtitle ||
-          typeof subtitle.sourceText !== "string" ||
-          typeof subtitle.translatedText !== "string" ||
-          !subtitle.translatedText.trim()
-        ) {
+      function isValidSubtitleMessage(subtitle) {
+        return (
+          subtitle &&
+          typeof subtitle.sourceText === "string" &&
+          typeof subtitle.translatedText === "string" &&
+          subtitle.translatedText.trim()
+        );
+      }
+
+      function createSubtitleTextBlock(label, text, textClassName = "") {
+        const block = document.createElement("div");
+        block.className = "subtitle-history-block";
+
+        const labelElement = document.createElement("span");
+        labelElement.className = "subtitle-history-label";
+        labelElement.textContent = label;
+
+        const textElement = document.createElement("p");
+        textElement.className = `subtitle-history-text ${textClassName}`.trim();
+        textElement.textContent = text;
+
+        block.append(labelElement, textElement);
+        return block;
+      }
+
+      function renderSubtitleHistory() {
+        subtitleHistoryList.replaceChildren();
+
+        for (const subtitle of subtitleHistory) {
+          const item = document.createElement("article");
+          item.className = "subtitle-history-item";
+
+          item.append(
+            createSubtitleTextBlock("English", subtitle.sourceText),
+            createSubtitleTextBlock("Chinese", subtitle.translatedText, "chinese"),
+          );
+          subtitleHistoryList.append(item);
+        }
+
+        subtitleHistoryContainer.hidden = subtitleHistory.length === 0;
+        subtitleHistoryList.scrollTop = subtitleHistoryList.scrollHeight;
+      }
+
+      function addSubtitleToHistory(subtitle) {
+        if (!isValidSubtitleMessage(subtitle)) {
           return;
         }
 
-        latestSourceText.textContent = subtitle.sourceText;
-        latestTranslatedText.textContent = subtitle.translatedText;
-        latestSubtitle.hidden = false;
+        subtitleHistory.push(subtitle);
+
+        if (subtitleHistory.length > MAX_SUBTITLE_HISTORY) {
+          subtitleHistory.splice(0, subtitleHistory.length - MAX_SUBTITLE_HISTORY);
+        }
+
+        renderSubtitleHistory();
       }
 
       function connectSubtitleStream() {
@@ -382,7 +420,7 @@
           }
 
           console.log("Subtitle received:", subtitle);
-          renderLatestSubtitle(subtitle);
+          addSubtitleToHistory(subtitle);
         });
 
         subtitleStream.onerror = (error) => {

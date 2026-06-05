@@ -50,21 +50,33 @@ def test_plugin_page_connects_to_subtitle_stream() -> None:
     assert response.status_code == 200
     assert 'EventSource("/api/subtitle/stream")' in response.text
     assert 'console.log("Subtitle received:", subtitle)' in response.text
-    assert "renderLatestSubtitle(subtitle)" in response.text
+    assert "addSubtitleToHistory(subtitle)" in response.text
     assert 'console.error("Subtitle stream error", error)' in response.text
 
 
-def test_plugin_page_contains_latest_subtitle_ui() -> None:
+def test_plugin_page_contains_subtitle_history_ui() -> None:
     response = client.get("/plugin")
 
     assert response.status_code == 200
-    assert 'id="latest-subtitle"' in response.text
-    assert 'id="latest-source-text"' in response.text
-    assert 'id="latest-translated-text"' in response.text
-    assert "function renderLatestSubtitle(subtitle)" in response.text
-    assert "latestSourceText.textContent = subtitle.sourceText;" in response.text
-    assert "latestTranslatedText.textContent = subtitle.translatedText;" in response.text
-    assert "latestSubtitle.hidden = false;" in response.text
+    assert 'id="subtitle-history"' in response.text
+    assert 'id="subtitle-history-list"' in response.text
+    assert "const subtitleHistory = [];" in response.text
+    assert "const MAX_SUBTITLE_HISTORY = 5;" in response.text
+    assert "function renderSubtitleHistory()" in response.text
+    assert "function addSubtitleToHistory(subtitle)" in response.text
+
+
+def test_plugin_page_keeps_recent_subtitle_history() -> None:
+    response = client.get("/plugin")
+
+    assert response.status_code == 200
+    assert "subtitleHistory.push(subtitle);" in response.text
+    assert "subtitleHistory.length > MAX_SUBTITLE_HISTORY" in response.text
+    assert "subtitleHistory.splice(0, subtitleHistory.length - MAX_SUBTITLE_HISTORY);" in response.text
+    assert 'document.createElement("article")' in response.text
+    assert "subtitleHistoryList.append(item);" in response.text
+    assert "subtitleHistoryList.scrollTop = subtitleHistoryList.scrollHeight;" in response.text
+    assert "subtitleHistoryContainer.hidden = subtitleHistory.length === 0;" in response.text
 
 
 def test_translate_api_passes_user_credentials_to_translation(monkeypatch) -> None:
