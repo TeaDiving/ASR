@@ -40,6 +40,27 @@ def test_subtitle_api_returns_complete_subtitle_message(monkeypatch) -> None:
     assert body["isFinal"] is True
 
 
+def test_subtitle_api_publishes_subtitle_message(monkeypatch) -> None:
+    published_messages = []
+
+    async def capture_publish(message: dict) -> None:
+        published_messages.append(message)
+
+    monkeypatch.setattr("backend.main.translate_text", fake_translate_text)
+    monkeypatch.setattr("backend.main.subtitle_broadcaster.publish", capture_publish)
+
+    response = client.post(
+        "/api/subtitle",
+        json={
+            "text": "Good morning everyone.",
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert published_messages == [body]
+
+
 def test_subtitle_api_defaults_is_final_to_true(monkeypatch) -> None:
     monkeypatch.setattr("backend.main.translate_text", fake_translate_text)
 
@@ -115,13 +136,19 @@ def test_subtitle_api_rejects_blank_text() -> None:
 
 
 def test_subtitle_api_returns_translation_failure(monkeypatch) -> None:
+    published_messages = []
+
     async def raise_translation_error(
         text: str,
         credentials: XFYUNCredentials | None = None,
     ) -> str:
         raise TranslationError("unexpected")
 
+    async def capture_publish(message: dict) -> None:
+        published_messages.append(message)
+
     monkeypatch.setattr("backend.main.translate_text", raise_translation_error)
+    monkeypatch.setattr("backend.main.subtitle_broadcaster.publish", capture_publish)
 
     response = client.post(
         "/api/subtitle",
@@ -132,3 +159,4 @@ def test_subtitle_api_returns_translation_failure(monkeypatch) -> None:
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Translation failed"}
+    assert published_messages == []

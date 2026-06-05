@@ -44,6 +44,15 @@ def test_plugin_page_is_served() -> None:
     assert "/api/translate" in response.text
 
 
+def test_plugin_page_connects_to_subtitle_stream() -> None:
+    response = client.get("/plugin")
+
+    assert response.status_code == 200
+    assert 'EventSource("/api/subtitle/stream")' in response.text
+    assert 'console.log("Subtitle received:", subtitle)' in response.text
+    assert 'console.error("Subtitle stream error", error)' in response.text
+
+
 def test_translate_api_passes_user_credentials_to_translation(monkeypatch) -> None:
     captured_credentials = None
 

@@ -1,11 +1,13 @@
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.subtitle_message import build_subtitle_message
+from backend.subtitle_stream import format_sse_event, subtitle_broadcaster
 from backend.text_preprocessing import normalize_text
 from backend.xfyun_translation import (
     TranslationConfigurationError,
@@ -127,11 +129,44 @@ async def create_subtitle_api(payload: dict[str, Any]) -> dict[str, Any]:
     except (TranslationConfigurationError, TranslationError) as exc:
         raise HTTPException(status_code=502, detail="Translation failed") from exc
 
-    return build_subtitle_message(
+    subtitle_message = build_subtitle_message(
         source_text=source_text,
         normalized_text=normalized_text,
         translated_text=translated_text,
         is_final=is_final,
+    )
+    await subtitle_broadcaster.publish(subtitle_message)
+
+    return subtitle_message
+
+
+@app.get("/api/subtitle/stream")
+async def subtitle_stream_api(request: Request) -> StreamingResponse:
+    async def event_generator():
+        queue = subtitle_broadcaster.subscribe()
+
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    subtitle_message = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+
+                yield format_sse_event(subtitle_message)
+        finally:
+            subtitle_broadcaster.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
 
 

@@ -63,3 +63,11 @@ POST http://127.0.0.1:8765/api/subtitle
 ```
 
 The response includes `id`, `sourceText`, `normalizedText`, `translatedText`, `timestamp`, and `isFinal`.
+
+Subscribe to realtime subtitle results:
+
+```text
+GET http://127.0.0.1:8765/api/subtitle/stream
+```
+
+The stream uses SSE and emits `subtitle` events whenever `POST /api/subtitle` successfully creates a new subtitle object.

@@ -264,11 +264,38 @@
       const result = document.querySelector("#result");
       const normalizedText = document.querySelector("#normalized-text");
       const translatedText = document.querySelector("#translated-text");
+      let subtitleStream = null;
 
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.classList.toggle("error", isError);
       }
+
+      function connectSubtitleStream() {
+        if (!window.EventSource) {
+          console.error("Subtitle stream error", "EventSource is not supported");
+          return;
+        }
+
+        subtitleStream = new EventSource("/api/subtitle/stream");
+
+        subtitleStream.addEventListener("subtitle", (event) => {
+          const subtitle = JSON.parse(event.data);
+          console.log("Subtitle received:", subtitle);
+        });
+
+        subtitleStream.onerror = (error) => {
+          console.error("Subtitle stream error", error);
+        };
+      }
+
+      connectSubtitleStream();
+
+      window.addEventListener("beforeunload", () => {
+        if (subtitleStream) {
+          subtitleStream.close();
+        }
+      });
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
