@@ -58,6 +58,17 @@
         font-size: 14px;
       }
 
+      .stream-status {
+        margin: 10px 0 0;
+        min-height: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .stream-status.is-connected {
+        color: var(--primary-dark);
+      }
+
       form {
         display: grid;
         gap: 16px;
@@ -155,6 +166,11 @@
       .result.is-visible {
         display: grid;
         gap: 12px;
+      }
+
+      .result.is-error {
+        border-color: #f1c6c1;
+        background: #fff4f2;
       }
 
       .result h2 {
@@ -274,6 +290,7 @@
       <header>
         <h1>ASR Translation Plugin</h1>
         <p class="subtitle">输入讯飞 API 凭据和英文文本，直接翻译成中文。</p>
+        <p id="stream-status" class="stream-status" role="status"></p>
       </header>
 
       <form id="translation-form">
@@ -311,7 +328,7 @@
       <section id="result" class="result" aria-live="polite">
         <h2>Result</h2>
         <div class="result-block">
-          <span class="result-label">Normalized</span>
+          <span class="result-label">English</span>
           <p id="normalized-text" class="result-text"></p>
         </div>
         <div class="result-block">
@@ -330,6 +347,7 @@
       const form = document.querySelector("#translation-form");
       const button = document.querySelector("#translate-button");
       const status = document.querySelector("#status");
+      const streamStatus = document.querySelector("#stream-status");
       const result = document.querySelector("#result");
       const normalizedText = document.querySelector("#normalized-text");
       const translatedText = document.querySelector("#translated-text");
@@ -342,6 +360,28 @@
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.classList.toggle("error", isError);
+      }
+
+      function setStreamStatus(message, isError = false) {
+        streamStatus.textContent = message;
+        streamStatus.classList.toggle("error", isError);
+        streamStatus.classList.toggle("is-connected", !isError);
+      }
+
+      function showManualTranslationResult(sourceText, chineseText, isError = false) {
+        normalizedText.textContent = sourceText;
+        translatedText.textContent = chineseText;
+        result.classList.add("is-visible");
+        result.classList.toggle("is-error", isError);
+      }
+
+      function showTranslationFailure(sourceText, error) {
+        showManualTranslationResult(
+          sourceText,
+          "Translation failed. Showing original English.",
+          true,
+        );
+        setStatus(error.message || "Translation failed", true);
       }
 
       function isValidSubtitleMessage(subtitle) {
@@ -404,10 +444,15 @@
       function connectSubtitleStream() {
         if (!window.EventSource) {
           console.error("Subtitle stream error", "EventSource is not supported");
+          setStreamStatus("Subtitle stream unavailable", true);
           return;
         }
 
         subtitleStream = new EventSource("/api/subtitle/stream");
+
+        subtitleStream.onopen = () => {
+          setStreamStatus("Subtitle stream connected");
+        };
 
         subtitleStream.addEventListener("subtitle", (event) => {
           let subtitle;
@@ -425,6 +470,7 @@
 
         subtitleStream.onerror = (error) => {
           console.error("Subtitle stream error", error);
+          setStreamStatus("Network disconnected, reconnecting...", true);
         };
       }
 
@@ -438,13 +484,15 @@
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        result.classList.remove("is-visible");
         setStatus("Translating...");
         button.disabled = true;
 
         const formData = new FormData(form);
+        const sourceText = String(formData.get("text") || "");
+        showManualTranslationResult(sourceText, "Translating...");
+
         const payload = {
-          text: formData.get("text"),
+          text: sourceText,
           xfyunCredentials: {
             appId: formData.get("appId"),
             apiKey: formData.get("apiKey"),
@@ -466,12 +514,10 @@
             throw new Error(data.detail || "Translation failed");
           }
 
-          normalizedText.textContent = data.normalizedText;
-          translatedText.textContent = data.translatedText;
-          result.classList.add("is-visible");
+          showManualTranslationResult(data.normalizedText, data.translatedText);
           setStatus("Done");
         } catch (error) {
-          setStatus(error.message || "Translation failed", true);
+          showTranslationFailure(sourceText, error);
         } finally {
           button.disabled = false;
         }

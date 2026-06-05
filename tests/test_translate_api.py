@@ -164,9 +164,26 @@ def test_plugin_page_connects_to_subtitle_stream() -> None:
 
     assert response.status_code == 200
     assert 'EventSource("/api/subtitle/stream")' in response.text
+    assert 'id="stream-status"' in response.text
+    assert "subtitleStream.onopen" in response.text
+    assert "Subtitle stream connected" in response.text
+    assert "Network disconnected, reconnecting..." in response.text
     assert 'console.log("Subtitle received:", subtitle)' in response.text
     assert "addSubtitleToHistory(subtitle)" in response.text
     assert 'console.error("Subtitle stream error", error)' in response.text
+
+
+def test_plugin_page_shows_loading_and_failure_states() -> None:
+    response = client.get("/plugin")
+
+    assert response.status_code == 200
+    assert "function showManualTranslationResult(sourceText, chineseText, isError = false)" in response.text
+    assert "function showTranslationFailure(sourceText, error)" in response.text
+    assert 'showManualTranslationResult(sourceText, "Translating...");' in response.text
+    assert '"Translation failed. Showing original English."' in response.text
+    assert "showTranslationFailure(sourceText, error);" in response.text
+    assert "button.disabled = true;" in response.text
+    assert "button.disabled = false;" in response.text
 
 
 def test_plugin_page_contains_subtitle_history_ui() -> None:
@@ -192,6 +209,15 @@ def test_plugin_page_keeps_recent_subtitle_history() -> None:
     assert "subtitleHistoryList.append(item);" in response.text
     assert "subtitleHistoryList.scrollTop = subtitleHistoryList.scrollHeight;" in response.text
     assert "subtitleHistoryContainer.hidden = subtitleHistory.length === 0;" in response.text
+
+
+def test_plugin_page_translation_failure_preserves_subtitle_history() -> None:
+    response = client.get("/plugin")
+
+    assert response.status_code == 200
+    assert "subtitleHistory.length = 0" not in response.text
+    assert "subtitleHistory.splice(0, subtitleHistory.length)" not in response.text
+    assert "subtitleHistoryContainer.hidden = true" not in response.text
 
 
 def test_translate_api_passes_user_credentials_to_translation(monkeypatch) -> None:
