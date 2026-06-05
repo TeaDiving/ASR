@@ -3,40 +3,40 @@
 ## Summary
 
 PR1 defines the data handoff boundary between Person A and Person B.
-It only documents the responsibility scope and JSON file format. It does not implement file reading, file watching, translation, correction, APIs, or subtitle UI.
+PR2 implements the WebSocket JSON receiving entrypoint for Person B. This document does not define translation, correction, or subtitle UI behavior.
 
 ## Module Boundary
 
 Person A is responsible for:
 
 ```text
-audio capture -> real-time audio processing -> Whisper recognition -> write ASR JSON file
+audio capture -> real-time audio processing -> Whisper recognition -> send ASR JSON message over WebSocket
 ```
 
 Person B is responsible for:
 
 ```text
-read ASR JSON file -> correction -> AI translation -> subtitle packaging -> subtitle display
+receive ASR JSON message over WebSocket -> correction -> AI translation -> subtitle packaging -> subtitle display
 ```
 
 The boundary between Person A and Person B is:
 
 ```text
-data/asr-output.json
+WebSocket JSON message
 ```
 
-Person A writes the latest English recognition result into this JSON file.
-Person B reads this JSON file in later PRs and starts processing from the English text field.
+Person A sends the latest English recognition result to Person B through WebSocket.
+Person B starts processing from the English text field in the received JSON message.
 
-## Handoff File
+## WebSocket Handoff
 
-The handoff file path is:
+The WebSocket endpoint is:
 
 ```text
-data/asr-output.json
+ws://localhost:8765/ws/asr
 ```
 
-The example file path is:
+The example payload file path is:
 
 ```text
 data/asr-output.example.json
@@ -44,7 +44,7 @@ data/asr-output.example.json
 
 ## ASRTextMessage
 
-Person A must write one `ASRTextMessage` object to `data/asr-output.json`.
+Person A must send one `ASRTextMessage` object to `/ws/asr`.
 
 ```json
 {
@@ -64,15 +64,24 @@ Person A must write one `ASRTextMessage` object to `data/asr-output.json`.
 
 ## Handoff Rules
 
-- Person A writes only the latest recognition result to `data/asr-output.json`.
+- Person A sends the latest recognition result to `ws://localhost:8765/ws/asr`.
 - Person B depends only on the JSON fields defined in `ASRTextMessage`.
 - Person B does not depend on Person A's audio capture, audio stream processing, or Whisper implementation.
-- PR1 does not implement runtime reading or writing logic.
+- `data/asr-output.example.json` is only an example payload, not a runtime handoff file.
+- PR2 only implements the receiving entrypoint and acknowledgement response.
 
 ## Acceptance Criteria
 
-- Person A knows the exact JSON file path to write.
-- Person B knows the exact JSON file path to read in later PRs.
+- Person A knows the exact WebSocket endpoint to send to.
+- Person B can receive `ASRTextMessage` messages through `/ws/asr`.
 - Both sides use `text` as the English recognition text field.
 - `data/asr-output.example.json` can be used as the reference example.
-- No translation, correction, API, file watcher, or UI logic is included in PR1.
+- No translation, correction, file watcher, or UI logic is included in PR2.
+
+## Local Run Command
+
+Start Person B's WebSocket service on port 8765:
+
+```bash
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8765 --reload
+```
