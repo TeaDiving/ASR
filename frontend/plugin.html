@@ -180,6 +180,53 @@
         white-space: pre-wrap;
       }
 
+      .latest-subtitle {
+        display: grid;
+        gap: 14px;
+        margin: 0 24px 24px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .latest-subtitle[hidden] {
+        display: none;
+      }
+
+      .latest-subtitle h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .subtitle-display {
+        display: grid;
+        gap: 10px;
+      }
+
+      .subtitle-display-block {
+        display: grid;
+        gap: 5px;
+      }
+
+      .subtitle-display-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .subtitle-display-text {
+        margin: 0;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      .subtitle-display-text.chinese {
+        font-size: 18px;
+        font-weight: 650;
+      }
+
       .error {
         color: var(--danger);
       }
@@ -201,6 +248,11 @@
 
         .result {
           margin: 0 18px 18px;
+        }
+
+        .latest-subtitle {
+          margin: 0 18px 18px;
+          padding: 16px;
         }
       }
     </style>
@@ -255,6 +307,28 @@
           <p id="translated-text" class="result-text"></p>
         </div>
       </section>
+
+      <section
+        id="latest-subtitle"
+        class="latest-subtitle"
+        aria-live="polite"
+        hidden
+      >
+        <h2>Live Subtitles</h2>
+        <div class="subtitle-display">
+          <div class="subtitle-display-block">
+            <span class="subtitle-display-label">English</span>
+            <p id="latest-source-text" class="subtitle-display-text"></p>
+          </div>
+          <div class="subtitle-display-block">
+            <span class="subtitle-display-label">Chinese</span>
+            <p
+              id="latest-translated-text"
+              class="subtitle-display-text chinese"
+            ></p>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -264,11 +338,29 @@
       const result = document.querySelector("#result");
       const normalizedText = document.querySelector("#normalized-text");
       const translatedText = document.querySelector("#translated-text");
+      const latestSubtitle = document.querySelector("#latest-subtitle");
+      const latestSourceText = document.querySelector("#latest-source-text");
+      const latestTranslatedText = document.querySelector("#latest-translated-text");
       let subtitleStream = null;
 
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.classList.toggle("error", isError);
+      }
+
+      function renderLatestSubtitle(subtitle) {
+        if (
+          !subtitle ||
+          typeof subtitle.sourceText !== "string" ||
+          typeof subtitle.translatedText !== "string" ||
+          !subtitle.translatedText.trim()
+        ) {
+          return;
+        }
+
+        latestSourceText.textContent = subtitle.sourceText;
+        latestTranslatedText.textContent = subtitle.translatedText;
+        latestSubtitle.hidden = false;
       }
 
       function connectSubtitleStream() {
@@ -280,8 +372,17 @@
         subtitleStream = new EventSource("/api/subtitle/stream");
 
         subtitleStream.addEventListener("subtitle", (event) => {
-          const subtitle = JSON.parse(event.data);
+          let subtitle;
+
+          try {
+            subtitle = JSON.parse(event.data);
+          } catch (error) {
+            console.error("Subtitle stream error", error);
+            return;
+          }
+
           console.log("Subtitle received:", subtitle);
+          renderLatestSubtitle(subtitle);
         });
 
         subtitleStream.onerror = (error) => {

@@ -50,7 +50,21 @@ def test_plugin_page_connects_to_subtitle_stream() -> None:
     assert response.status_code == 200
     assert 'EventSource("/api/subtitle/stream")' in response.text
     assert 'console.log("Subtitle received:", subtitle)' in response.text
+    assert "renderLatestSubtitle(subtitle)" in response.text
     assert 'console.error("Subtitle stream error", error)' in response.text
+
+
+def test_plugin_page_contains_latest_subtitle_ui() -> None:
+    response = client.get("/plugin")
+
+    assert response.status_code == 200
+    assert 'id="latest-subtitle"' in response.text
+    assert 'id="latest-source-text"' in response.text
+    assert 'id="latest-translated-text"' in response.text
+    assert "function renderLatestSubtitle(subtitle)" in response.text
+    assert "latestSourceText.textContent = subtitle.sourceText;" in response.text
+    assert "latestTranslatedText.textContent = subtitle.translatedText;" in response.text
+    assert "latestSubtitle.hidden = false;" in response.text
 
 
 def test_translate_api_passes_user_credentials_to_translation(monkeypatch) -> None:
