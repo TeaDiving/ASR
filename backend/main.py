@@ -132,7 +132,7 @@ async def prepare_translation_text(
             previous_context=correction_context_memory.get_previous_context(),
         )
         final_text = ai_corrected_text
-    except Exception as e:
+    except Exception:
         # If anything fails (missing keys, network, etc.), fallback to checked_text
         pass
 
