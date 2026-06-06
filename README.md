@@ -1,75 +1,55 @@
-## ASR Person B Service
+# AI Desktop Interpreter (AI 桌面同传助手)
 
-Start the WebSocket receiving service on port 8765:
+这是一个基于 Whisper 语音识别和讯飞翻译的实时桌面同传软件。它能够自动捕捉电脑系统发出的声音（如视频、网课、会议等），并将其实时识别、翻译并显示在悬浮字幕条上。
 
+## 🌟 核心功能
+
+- **系统声音捕捉**：无需麦克风，直接抓取电脑内部播放的声音（WASAPI Loopback）。
+- **实时悬浮字幕**：始终置顶的半透明字幕条，支持鼠标自由拖拽。
+- **极速同步模式**：针对性能优化的“爆发模式”与“任务抢占”逻辑，确保字幕基本同步。
+- **全语种识别**：支持英语、日语、法语、德语等多种语言自动识别并翻译为中文。
+- **单行简洁显示**：智能字体缩放与截断算法，确保字幕永远不挤压、不超框。
+- **图形化操作界面**：支持在界面直接配置讯飞 API 密钥及选择 Whisper 模型（tiny/base/small 等）。
+
+## 🚀 快速开始
+
+### 1. 环境准备
+确保你的电脑已安装 Python 3.10 或更高版本。
+
+### 2. 安装依赖
+在项目根目录下运行以下命令安装必要的库：
 ```bash
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8765 --reload
+pip install -r requirements.txt
+pip install PySide6 faster-whisper pyaudiowpatch httpx
+```
+*注意：如果识别速度较慢，建议确保电脑安装了 ffmpeg。*
+
+### 3. 配置 API 密钥
+你需要准备讯飞开放平台的 **机器翻译 (ITS)** 凭证：
+- AppID
+- APIKey
+- APISecret
+
+你可以将这些信息填写在根目录的 `.env` 文件中（参考 `.env.example`），也可以在软件启动后的界面中直接输入。
+
+### 4. 运行软件
+```bash
+python src/desktop_app.py
 ```
 
-Person A sends ASR JSON messages to:
+## 🛠️ 使用技巧
 
-```text
-ws://localhost:8765/ws/asr
-```
+1. **选择模型**：默认使用 `tiny` 模型以获得最快的同步速度。如果追求准确度且电脑性能足够，可以切换至 `base` 或 `small`。
+2. **移动字幕**：启动后，直接按住屏幕下方的黑色字幕条左键即可全屏移动。
+3. **快速停止**：点击字幕条右上角的 **“×”** 即可立即停止捕捉。
+4. **模型加载**：首次运行特定模型时，系统会自动下载模型文件（几百MB），请保持网络畅通。
 
-Open the webpage plugin after starting the service:
+## 📂 项目结构
 
-```text
-http://127.0.0.1:8765/plugin
-```
+- `src/desktop_app.py`: 软件主程序（包含 GUI 和核心逻辑）。
+- `src/audio/`: 音频捕捉与处理模块。
+- `src/asr/`: Whisper 识别封装。
+- `backend/`: 讯飞翻译对接与文本预处理。
 
-The plugin lets users enter their own XFYUN API credentials and English text for translation.
-
-Load the browser extension prototype from:
-
-```text
-extension/
-```
-
-In Chrome or Edge, open the extensions page, enable developer mode, and load `extension/` as an unpacked extension. The popup lets users save XFYUN API credentials, send English test text to `/api/translate`, and render the translated Chinese subtitle overlay on the current webpage.
-
-XFYUN credentials:
-
-- `.env`: private credentials, keep locally and do not upload.
-- `.env.example`: blank template, share with teammates.
-- `.gitignore`: blocks `.env` from being uploaded and leaking API keys.
-
-Create your local `.env` from `.env.example`, then fill in:
-
-```text
-XF_APPID=your_app_id
-XF_APIKEY=your_api_key
-XF_SECRET=your_api_secret
-XF_SPARK_API_URL=wss://spark-api.xf-yun.com/v4.0/chat
-XF_SPARK_DOMAIN=4.0Ultra
-```
-
-The same XFYUN credential set is used for machine translation and Spark AI correction. Successful ASR messages return both `normalizedText` and `translatedText`.
-
-Create a subtitle result object:
-
-```text
-POST http://127.0.0.1:8765/api/subtitle
-```
-
-```json
-{
-  "text": "Good morning everyone.",
-  "isFinal": true,
-  "xfyunCredentials": {
-    "appId": "your_app_id",
-    "apiKey": "your_api_key",
-    "apiSecret": "your_api_secret"
-  }
-}
-```
-
-The response includes `id`, `sourceText`, `normalizedText`, `translatedText`, `timestamp`, and `isFinal`.
-
-Subscribe to realtime subtitle results:
-
-```text
-GET http://127.0.0.1:8765/api/subtitle/stream
-```
-
-The stream uses SSE and emits `subtitle` events whenever `POST /api/subtitle` successfully creates a new subtitle object.
+---
+*本项目仅供学习与交流使用。*
