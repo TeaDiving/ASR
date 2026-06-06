@@ -5,20 +5,36 @@ import numpy as np
 from audio.capture import AudioCapturer
 from audio.vad import VADHandler
 from asr.whisper import WhisperASR
-from server.websocket import WebSocketServer
+import websockets
+import json
 import sounddevice as sd
 import time
 
 class ASRSystem:
-    def __init__(self, device_index=None, model_size="base"):
+    def __init__(self, device_index=None, model_size="base", backend_url="ws://127.0.0.1:8000/ws/asr"):
         self.capturer = AudioCapturer(device_index=device_index, samplerate=16000, blocksize=512)
         self.vad = VADHandler()
         self.asr = WhisperASR(model_size=model_size, device="cpu") 
-        self.ws_server = WebSocketServer()
+        self.backend_url = backend_url
+        self.ws = None
         
         self.audio_buffer = []
         self.is_running = False
         self.last_partial_time = 0
+        self.is_processing = False # Prevent overlapping transcription tasks
+
+    async def connect_backend(self):
+        while self.is_running:
+            try:
+                print(f"Connecting to backend at {self.backend_url}...")
+                async with websockets.connect(self.backend_url) as websocket:
+                    self.ws = websocket
+                    print("Connected to backend.")
+                    await websocket.wait_closed()
+            except Exception as e:
+                print(f"WebSocket connection error: {e}. Retrying in 3s...")
+                self.ws = None
+                await asyncio.sleep(3)
 
     async def process_audio(self):
         print("\n>>> ASR Streaming Mode is LIVE!", flush=True)
@@ -32,7 +48,6 @@ class ASRSystem:
                     chunk = self.capturer.audio_queue.get_nowait().flatten()
                     peak = np.max(np.abs(chunk)) 
                     
-                    # Use VAD to detect speech state
                     speech_dict = self.vad.is_speech(chunk)
                     if speech_dict:
                         if 'start' in speech_dict: 
@@ -40,36 +55,33 @@ class ASRSystem:
                         elif 'end' in speech_dict: 
                             in_speech = False
 
-                    # GATING: Only collect audio if we are in speech or sound is significant
-                    # This prevents "You" hallucinations from background hiss
-                    if in_speech or peak > 0.05:
+                    # GATING: Higher threshold to ignore minor noise/hiss
+                    if in_speech or peak > 0.1:
                         self.audio_buffer.append(chunk)
-                        silence_counter = 0 # Reset silence if we hear SOMETHING
+                        silence_counter = 0 
                     else:
-                        # If we are not in speech, keep silence_counter going
                         if len(self.audio_buffer) > 0:
                             silence_counter += 1
                     
-                    # Logic 1: Immediate Feedback (Partial Results)
                     current_time = time.time()
-                    if in_speech and (current_time - self.last_partial_time > 1.5):
+                    # LOGIC 1: Partial updates (now non-blocking and throttled)
+                    if in_speech and not self.is_processing and (current_time - self.last_partial_time > 1.2):
                         if len(self.audio_buffer) > 30:
-                            await self.do_transcribe(segment_id, is_final=False)
+                            # Fire and forget task to keep the audio loop running smoothly
+                            asyncio.create_task(self.do_transcribe(segment_id, is_final=False))
                             self.last_partial_time = current_time
 
-                    # Logic 2: Finalize on Silence
+                    # LOGIC 2: Finalize on silence
                     should_finalize = False
                     if not in_speech and len(self.audio_buffer) > 0:
-                        if silence_counter > 12: # 0.35s of consistent silence (Faster!)
+                        if silence_counter > 10: 
                             should_finalize = True
                     
-                    # Logic 3: Safety cut at 25 seconds (Whisper limit is 30)
                     if len(self.audio_buffer) > 800: 
                         should_finalize = True
 
-                    if should_finalize:
+                    if should_finalize and not self.is_processing:
                         if len(self.audio_buffer) > 40:
-                            print(f"\n[FINALIZING] Segment {segment_id}")
                             await self.do_transcribe(segment_id, is_final=True)
                             segment_id += 1
                         self.audio_buffer = []
@@ -81,27 +93,39 @@ class ASRSystem:
                 print(f"Loop Error: {e}")
 
     async def do_transcribe(self, segment_id, is_final=False):
-        if not self.audio_buffer: return
+        # Don't allow multiple partials to run at once
+        if not self.audio_buffer or (self.is_processing and not is_final): return
         
-        # Don't clear buffer if it's just a partial result
+        self.is_processing = True
         audio_to_process = np.concatenate(self.audio_buffer)
         
         try:
-            # We use beam_size=1 for partial results to make it faster
-            text, lang = await asyncio.to_thread(self.asr.transcribe, audio_to_process)
+            # text, lang, confidence
+            text, lang, confidence = await asyncio.to_thread(self.asr.transcribe, audio_to_process)
             
             if text:
+                # Relaxed confidence gate for partials
+                if not is_final and confidence < -1.0:
+                    self.is_processing = False
+                    return
+
                 prefix = ">>> " if not is_final else "FINAL: "
-                print(f"{prefix}({lang}) {text}          ", end="\r" if not is_final else "\n", flush=True)
+                print(f"{prefix}({lang}) [{confidence:.2f}] {text}          ", end="\r" if not is_final else "\n", flush=True)
                 
-                await self.ws_server.broadcast({
-                    "id": segment_id,
-                    "text": text,
-                    "language": lang,
-                    "is_final": is_final
-                })
+                if self.ws:
+                    try:
+                        await self.ws.send(json.dumps({
+                            "id": str(segment_id),
+                            "text": text,
+                            "language": lang,
+                            "is_final": is_final
+                        }))
+                    except Exception as e:
+                        print(f"Send Error: {e}")
         except Exception as e:
             print(f"Transcribe Error: {e}")
+        finally:
+            self.is_processing = False
 
     async def run(self):
         self.is_running = True
@@ -109,7 +133,7 @@ class ASRSystem:
             self.capturer.start()
         except Exception as e:
             print(f"Capture Error: {e}"); return
-        await asyncio.gather(self.ws_server.start(), self.process_audio())
+        await asyncio.gather(self.connect_backend(), self.process_audio())
 
     def stop(self):
         self.is_running = False
