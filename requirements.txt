@@ -1,6 +1,6 @@
-faster-whisper
-silero-vad
-sounddevice
-numpy
+fastapi
+uvicorn[standard]
+pytest
+httpx
+python-dotenv
 websockets
-onnxruntime
