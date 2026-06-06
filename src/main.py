@@ -156,14 +156,20 @@ def list_devices_briefly():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=int)
+    parser.add_argument("--device", type=int, help="Audio device index. If omitted, will try to auto-select system audio (loopback).")
     parser.add_argument("--model", type=str, default="base")
     args = parser.parse_args()
-    if args.device is None:
-        list_devices_briefly()
-        val = input("Device ID: ")
-        args.device = int(val) if val.strip() else None
+    
+    # If no device is specified, we don't call list_devices_briefly() and wait for input.
+    # We let AudioCapturer handle the default loopback detection.
+    
     system = ASRSystem(device_index=args.device, model_size=args.model)
+    print(f"Starting ASR with model: {args.model}")
+    if args.device is None:
+        print("Targeting: SYSTEM AUDIO (Loopback)")
+    else:
+        print(f"Targeting: DEVICE INDEX {args.device}")
+
     try:
         asyncio.run(system.run())
     except KeyboardInterrupt:

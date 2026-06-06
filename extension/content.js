@@ -4,6 +4,9 @@
   const DEFAULT_BACKEND_URL = "http://127.0.0.1:8000";
 
   let subtitleStream = null;
+  let isDragging = false;
+  let dragStartX, dragStartY;
+  let overlayStartX, overlayStartY;
 
   function ensureOverlayStyles() {
     if (document.getElementById(OVERLAY_STYLE_ID)) {
@@ -16,63 +19,54 @@
       #${OVERLAY_ID} {
         position: fixed;
         left: 50%;
-        bottom: calc(88px + env(safe-area-inset-bottom));
+        bottom: 100px;
         transform: translateX(-50%);
         width: min(860px, calc(100vw - 32px));
         max-width: calc(100vw - 32px);
         padding: 18px 22px;
-        border-radius: 10px;
-        background: rgba(0, 0, 0, 0.72);
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         color: #ffffff;
         font-family: Inter, "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
         text-align: center;
         z-index: 2147483647;
-        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-        pointer-events: none;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        cursor: move;
+        user-select: none;
         display: none;
+        transition: background 0.2s;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      #${OVERLAY_ID}:hover {
+        background: rgba(20, 20, 20, 0.85);
       }
 
       #${OVERLAY_ID} .asr-subtitle-english {
-        color: #ffffff;
+        color: rgba(255, 255, 255, 0.9);
         font-size: 16px;
-        line-height: 1.45;
-        opacity: 0.88;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        line-height: 1.4;
+        margin-bottom: 4px;
       }
 
       #${OVERLAY_ID} .asr-subtitle-chinese {
         color: #ffffff;
-        font-size: 28px;
-        line-height: 1.35;
+        font-size: 26px;
+        line-height: 1.3;
         font-weight: 700;
-        margin-top: 6px;
-        overflow-wrap: anywhere;
-        word-break: break-word;
       }
 
-      @media (max-width: 640px) {
-        #${OVERLAY_ID} {
-          width: calc(100vw - 24px);
-          max-width: calc(100vw - 24px);
-          bottom: calc(72px + env(safe-area-inset-bottom));
-          padding: 12px 14px;
-          border-radius: 8px;
-        }
-
-        #${OVERLAY_ID} .asr-subtitle-english {
-          font-size: 14px;
-          line-height: 1.4;
-        }
-
-        #${OVERLAY_ID} .asr-subtitle-chinese {
-          font-size: 22px;
-          line-height: 1.35;
-          margin-top: 4px;
-        }
+      .asr-drag-handle {
+        position: absolute;
+        top: 4px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
       }
     `;
 
@@ -90,15 +84,69 @@
 
     overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
-    overlay.style.pointerEvents = "none";
-    overlay.style.display = "none";
-
     overlay.innerHTML = `
+      <div class="asr-drag-handle"></div>
       <div data-asr-source class="asr-subtitle-english"></div>
       <div data-asr-translation class="asr-subtitle-chinese"></div>
     `;
 
     document.body.appendChild(overlay);
+
+    // Load saved position
+    chrome.storage.local.get(["subtitlePos"], (result) => {
+      if (result.subtitlePos) {
+        overlay.style.left = result.subtitlePos.x;
+        overlay.style.top = result.subtitlePos.y;
+        overlay.style.bottom = "auto";
+        overlay.style.transform = "none";
+      }
+    });
+
+    // Drag and drop implementation
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return; // Only left click
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      
+      const rect = overlay.getBoundingClientRect();
+      overlayStartX = rect.left;
+      overlayStartY = rect.top;
+      
+      overlay.style.transition = "none"; // Disable transitions while dragging
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+
+      const newX = overlayStartX + deltaX;
+      const newY = overlayStartY + deltaY;
+
+      overlay.style.left = `${newX}px`;
+      overlay.style.top = `${newY}px`;
+      overlay.style.bottom = "auto";
+      overlay.style.transform = "none";
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (isDragging) {
+        isDragging = false;
+        overlay.style.transition = "";
+        
+        // Save position
+        chrome.storage.local.set({
+          subtitlePos: {
+            x: overlay.style.left,
+            y: overlay.style.top
+          }
+        });
+      }
+    });
+
     return overlay;
   }
 
@@ -158,7 +206,7 @@
     }
 
     if (message.type === "ASR_SHOW_OVERLAY") {
-      ensureOverlay();
+      ensureOverlay().style.display = "block";
       sendResponse({ ok: true });
       return true;
     }

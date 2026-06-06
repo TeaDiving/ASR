@@ -30,13 +30,32 @@ class AudioCapturer:
         print(f"Requesting {self.frames_to_request} frames per buffer.")
 
     def _find_default_loopback(self):
-        wasapi_info = self.pa.get_host_api_info_by_type(pyaudio.paWASAPI)
-        default_speakers = self.pa.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
-        if not default_speakers["isLoopbackDevice"]:
-            for loopback in self.pa.get_loopback_device_info_generator():
-                if default_speakers["name"] in loopback["name"]:
-                    return loopback["index"]
-        return wasapi_info["defaultOutputDevice"]
+        try:
+            wasapi_info = self.pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+        except OSError:
+            print("!!! WASAPI is not available. System audio capture requires Windows.")
+            raise RuntimeError("WASAPI not found")
+
+        # 1. Try to find the loopback device corresponding to the default output device
+        default_output_index = wasapi_info["defaultOutputDevice"]
+        default_output_info = self.pa.get_device_info_by_index(default_output_index)
+        
+        print(f"Default Output Device: {default_output_info['name']}")
+
+        # Search for a loopback device that matches the default output name
+        for loopback in self.pa.get_loopback_device_info_generator():
+            if default_output_info["name"] in loopback["name"]:
+                print(f"Found matching Loopback Device: {loopback['name']} (Index {loopback['index']})")
+                return loopback["index"]
+
+        # 2. Fallback: just take the first available loopback device
+        for loopback in self.pa.get_loopback_device_info_generator():
+            print(f"Fallback to first Loopback Device: {loopback['name']} (Index {loopback['index']})")
+            return loopback["index"]
+
+        # 3. Last resort: use default output index and hope for the best (usually fails for capture)
+        print("!!! No dedicated Loopback device found. Trying default output.")
+        return default_output_index
 
     def _callback(self, in_data, frame_count, time_info, status):
         data = np.frombuffer(in_data, dtype=np.float32)
