@@ -108,7 +108,9 @@ class ASRWorker(threading.Thread):
                     try:
                         translated = asyncio.run(translate_text(normalized, from_lang=lang, credentials=self.creds))
                         self.signals.subtitle_updated.emit(text, translated, is_final)
-                    except Exception: pass
+                    except Exception as te:
+                        print(f"Translation Error ({lang}): {te}")
+                        self.signals.subtitle_updated.emit(text, f"[翻译出错: {te}]", is_final)
         finally:
             self.is_processing = False
 
@@ -190,7 +192,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AI Desktop Interpreter")
-        self.setMinimumSize(450, 480)
+        self.setMinimumSize(450, 400)
         
         central = QWidget()
         self.setCentralWidget(central)
@@ -221,54 +223,37 @@ class MainWindow(QMainWindow):
         self.start_btn.clicked.connect(self.toggle_asr)
         layout.addWidget(self.start_btn)
         
-        # STATUS BOX (The long box at the bottom)
-        self.status_frame = QFrame()
-        self.status_frame.setFrameShape(QFrame.StyledPanel)
-        self.status_frame.setStyleSheet("background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;")
-        status_layout = QVBoxLayout(self.status_frame)
-        self.status_label = QLabel("Status: Ready")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("color: #495057; font-weight: bold;")
-        status_layout.addWidget(self.status_label)
-        layout.addWidget(self.status_frame)
-        
         self.overlay = SubtitleOverlay()
         self.overlay.close_requested.connect(self.toggle_asr)
         self.signals = ASRSignals()
         self.signals.subtitle_updated.connect(self.overlay.update_text)
-        self.signals.status_updated.connect(self.update_status_text)
         self.signals.loading_finished.connect(self.on_loading_finished)
         self.worker = None
 
-    def update_status_text(self, text):
-        self.status_label.setText(text)
-
     def on_loading_finished(self):
-        self.status_frame.setStyleSheet("background-color: #e9ecef; border: 1px solid #ced4da; border-radius: 5px;")
-        self.status_label.setText("Status: Running (Loaded)")
+        self.start_btn.setEnabled(True)
+        self.start_btn.setText("STOP Interpretation")
+        self.start_btn.setStyleSheet("background-color: #dc3545; color: white; font-size: 16px; font-weight: bold; border-radius: 5px;")
 
     def toggle_asr(self):
         if self.worker and self.worker.is_running:
             self.worker.stop()
             self.start_btn.setText("START Interpretation")
-            self.start_btn.setStyleSheet("background-color: #28a745; color: white;")
-            self.status_frame.setStyleSheet("background-color: #f8f9fa; border: 1px solid #dee2e6;")
-            self.status_label.setText("Status: Stopped")
+            self.start_btn.setEnabled(True)
+            self.start_btn.setStyleSheet("background-color: #28a745; color: white; font-size: 16px; font-weight: bold; border-radius: 5px;")
             self.overlay.hide()
         else:
             creds = XFYUNCredentials(app_id=self.app_id.text().strip(), api_key=self.api_key.text().strip(), api_secret=self.api_secret.text().strip())
             if not creds.app_id or not creds.api_key:
-                self.status_label.setText("Status: Missing API Keys!"); return
+                return
             
-            # Show loading style in main window
-            self.status_frame.setStyleSheet("background-color: #ffffff; border: 2px solid #007bff; border-radius: 5px;")
-            self.status_label.setText("Whisper 模型加载中...")
+            self.start_btn.setText("Loading Whisper Model...")
+            self.start_btn.setEnabled(False)
+            self.start_btn.setStyleSheet("background-color: #6c757d; color: white; font-size: 16px; font-weight: bold; border-radius: 5px;")
             
             self.overlay.show()
             self.worker = ASRWorker(self.signals, model_size=self.model_combo.currentText(), creds=creds)
             self.worker.start()
-            self.start_btn.setText("STOP Interpretation")
-            self.start_btn.setStyleSheet("background-color: #dc3545; color: white;")
 
     def closeEvent(self, event):
         if self.worker: self.worker.stop()
